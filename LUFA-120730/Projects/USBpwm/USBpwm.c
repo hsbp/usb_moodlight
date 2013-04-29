@@ -176,8 +176,8 @@ uint8_t gethexdigit(void)
 	// read directly from serial port
 	const uint8_t c = CDC_Device_ReceiveByte(&VirtualSerial_CDC_Interface);
 	if('0' <= c && c <= '9') return c-'0';
-	if ('A' <= c && c && c <= 'F') return c-'A';
-	if ('a' <= c && c && c <= 'f') return c-'a';
+	if ('A' <= c && c && c <= 'F') return 10+c-'A';
+	if ('a' <= c && c && c <= 'f') return 10+c-'a';
 	return -1;
 }
 
