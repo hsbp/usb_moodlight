@@ -32,6 +32,8 @@ void init(void);
 void setcolor(uint16_t,uint16_t,uint16_t);
 int lowvoltage(void);
 void helloworld(void);
+uint8_t setcmd(uint16_t *r, uint16_t *g, uint16_t *b);
+uint8_t gethexdigit(void);
 void mood(void);
 void USB_sendstring(char *);
 void USB_sendstring_P(PGM_P);
@@ -95,10 +97,10 @@ int main(void)
 	RingBuffer_InitBuffer(&USBtoUSART_Buffer, USBtoUSART_Buffer_Data, sizeof(USBtoUSART_Buffer_Data));
 	RingBuffer_InitBuffer(&USARTtoUSB_Buffer, USARTtoUSB_Buffer_Data, sizeof(USARTtoUSB_Buffer_Data));
 	sei();
-	
+
 	/// greetings to the user via USB
-	helloworld();
-	
+	//helloworld();
+
 	/// main loop
 	for (;;)
 	{
@@ -152,7 +154,7 @@ void USB_sendstring(char *s)	/// send string from RAM
 void USB_sendstring_P(PGM_P s)	/// send string from PROGMEM
 {
 	uint8_t b;
-	while ( b = pgm_read_byte(s++) ) RingBuffer_Insert(&USARTtoUSB_Buffer, b);
+	while ( (b = pgm_read_byte(s++)) ) RingBuffer_Insert(&USARTtoUSB_Buffer, b);
 }
 
 void USB_sendbyte(uint8_t byte)	/// send byte
@@ -169,15 +171,47 @@ void helloworld(void)	/// "# Hello World" to host via USB ;-)
 	num %= 10;
 }
 
+uint8_t gethexdigit(void)
+{
+	// read directly from serial port
+	const uint8_t c = CDC_Device_ReceiveByte(&VirtualSerial_CDC_Interface);
+	if('0' <= c && c <= '9') return c-'0';
+	if ('A' <= c && c && c <= 'F') return c-'A';
+	if ('a' <= c && c && c <= 'f') return c-'a';
+	return -1;
+}
+
+uint8_t setcmd(uint16_t *r, uint16_t *g, uint16_t *b)
+{
+	static uint8_t h, l;
+	if( ((h=gethexdigit()) == -1) || ((l=gethexdigit()) == -1) ) {
+		//USB_sendstring_P(PSTR("meh\r\n"));
+		return true;
+	}
+	*r=((h<<4)+l) << 8;
+	if( ((h=gethexdigit()) == -1) || ((l=gethexdigit()) == -1) ) {
+		//USB_sendstring_P(PSTR("meh\r\n"));
+		return true;
+	}
+	*g=((h<<4)+l) << 8;
+	if( ((h=gethexdigit()) == -1) || ((l=gethexdigit()) == -1) ) {
+		//USB_sendstring_P(PSTR("meh\r\n"));
+		return true;
+	}
+	*b=((h<<4)+l) << 8;
+	return false;
+}
+
 void mood(void)
 {
 	static uint8_t command;
 	static uint16_t i=0;
 	static uint16_t r=MAXPWM,g=MAXPWM/2,b=MAXPWM/42;
 	static uint16_t r_dir=R_SPEED, g_dir=G_SPEED, b_dir=B_SPEED;
+	static bool loop=true;
 
-	command='m';	// default command: mood
-	
+	command=' ';	// default command: none
+
 	/* Load the next command byte from the USB to USART transmit buffer */
 	if (!(RingBuffer_IsEmpty(&USBtoUSART_Buffer)))
 		  command=RingBuffer_Remove(&USBtoUSART_Buffer);
@@ -188,21 +222,25 @@ void mood(void)
 		case 'G': if (g <= MAXPWM-1000) g+=1000; break;
 		case 'b': if (b >=1000) b-=1000; break;
 		case 'B': if (b <= MAXPWM-1000) b+=1000; break;
-		case 'h': helloworld();
+		case 'h': loop=true; helloworld(); break;
+		case '#': loop=setcmd(&r,&g,&b); break;
+		case 'm': loop=true;
 		default:
 			if (++i > DELAY) {
-				if (r >= (MAXPWM - R_SPEED)) r_dir = -R_SPEED;
-				if (r <= R_SPEED) r_dir = R_SPEED;
-				if (g >= (MAXPWM - G_SPEED)) g_dir = -G_SPEED;
-				if (g <= G_SPEED) g_dir = G_SPEED;
-				if (b >= (MAXPWM - B_SPEED)) b_dir = -B_SPEED;
-				if (b <= B_SPEED) b_dir = B_SPEED;
-				r += r_dir; g += g_dir; b += b_dir;
-				setcolor(r,g,b);
-				if (lowvoltage()) {	// red light and stop
-					setcolor(MAXPWM,0,0);
-					for(;;);
+				if(loop) {
+					if (r >= (MAXPWM - R_SPEED)) r_dir = -R_SPEED;
+					if (r <= R_SPEED) r_dir = R_SPEED;
+					if (g >= (MAXPWM - G_SPEED)) g_dir = -G_SPEED;
+					if (g <= G_SPEED) g_dir = G_SPEED;
+					if (b >= (MAXPWM - B_SPEED)) b_dir = -B_SPEED;
+					if (b <= B_SPEED) b_dir = B_SPEED;
+					r += r_dir; g += g_dir; b += b_dir;
 				}
+				setcolor(r,g,b);
+				//if (lowvoltage()) {	// red light and stop
+				//	setcolor(MAXPWM,0,0);
+				//	for(;;);
+				//}
 				i=0;
 			}
 	}
